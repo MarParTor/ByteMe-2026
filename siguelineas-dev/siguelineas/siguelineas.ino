@@ -171,6 +171,17 @@ int normalizar(int valor, int sensor) {
 int calcularError(int norm[]) {
   const int pesos[6] = { -5, -3, -1, 1, 3, 5 };
 
+  // ── DETECCIÓN DE BIFURCACIÓN ─────────────────────────────
+  // Si los sensores extremos izquierdos Y derechos ven negro
+  // simultáneamente, hay una bifurcación: tomamos la derecha.
+  bool ladoIzq = (norm[0] > UMBRAL_NEGRO || norm[1] > UMBRAL_NEGRO);
+  bool ladoDer = (norm[4] > UMBRAL_NEGRO || norm[5] > UMBRAL_NEGRO);
+  if (ladoIzq && ladoDer) {
+    LOG(">> BIFURCACION: tomando derecha");
+    LOGLN("");
+    return 3;  // Error positivo → el robot gira a la derecha
+  }
+
   long suma      = 0;
   long pesoTotal = 0;
 
