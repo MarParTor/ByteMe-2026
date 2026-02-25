@@ -50,6 +50,9 @@ const int LECTURAS_INIT = 200;
 // Funciona también para colores oscuros como rojo oscuro o azul marino.
 const int UMBRAL_NEGRO = 50;
 
+
+// Último error válido antes de perder la línea
+int ultimoError = 0;
 // ============================================================
 //  FUNCIONES DE MOTORES
 // ============================================================
@@ -217,8 +220,24 @@ void seguirLinea(int error) {
  * Estrategia cuando no se detecta línea: frena para no perderse más.
  */
 void manejarLineaPerdida() {
-  detener();
-  LOGLN("!! LINEA PERDIDA !!");
+  LOG("!! LINEA PERDIDA !! Girando hacia: ");
+  LOGLN(ultimoError);
+
+  // Velocidad de búsqueda: más lenta que la crucero para no pasarse
+  const int VEL_BUSQUEDA = 140;
+
+  if (ultimoError > 0) {
+    // La línea se perdió por la derecha → gira derecha
+    motorDer(-VEL_BUSQUEDA);
+    motorIzq(VEL_BUSQUEDA);
+  } else if (ultimoError < 0) {
+    // La línea se perdió por la izquierda → gira izquierda
+    motorDer(VEL_BUSQUEDA);
+    motorIzq(-VEL_BUSQUEDA);
+  } else {
+    // Nunca hubo error conocido → frena (caso de arranque sin línea)
+    detener();
+  }
 }
 
 // ============================================================
@@ -283,6 +302,7 @@ void loop() {
   if (error == 999) {
     manejarLineaPerdida();
   } else {
+      ultimoError = error;  // ← guarda el último error válido
     seguirLinea(error);
   }
 
