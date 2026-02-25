@@ -1,6 +1,6 @@
 // Pines analógicos donde conectas OUT0...OUT7
 const int sensorPins[8] = {
-  A0, A1, A2, A3, A4, A5
+  A0, A1, A2, A3, A4, A5c:\Users\carla\Downloads\siguelineas.ino
 };
 
 void setup() {
@@ -16,5 +16,5 @@ void loop() {
     Serial.println(value);
   }
   Serial.println();
-  delay(100); // Ajusta al ritmo que necesites
+  delay(100); // Ajusta al ritmo que necesitesc:\Users\carla\Desktop\byteme\ByteMe-2026\siguelineas\siguelineas.ino
 }

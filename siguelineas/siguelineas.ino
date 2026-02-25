@@ -4,28 +4,36 @@
 //  Convención del hardware:
 //    1023 = negro más puro   (mucha reflexión IR absorbida)
 //       0 = blanco más puro  (mucha reflexión IR reflejada)
+//  IMPORTANTE: Los colores como rojo o azul quedan en valores
+//  intermedios según su reflectividad IR. La autocalibración
+//  dinámica se adapta automáticamente a estos colores.
 // ============================================================
 
-// ── PINES ────────────────────────────────────────────────────
+// ── BLUETOOTH ────────────────────────────────────────────────
+// RX del Arduino al TX del HC-05, TX del Arduino al RX del HC-05
+// Pines 10 y 11 libres para el bluetooth
+#include <SoftwareSerial.h>
+SoftwareSerial BT(10, 11); // RX, TX
+
+// Macro para enviar los chivatos a los dos puertos a la vez (Serie y Bluetooth)
+#define LOG(x)   { Serial.print(x);   BT.print(x);   }
+#define LOGLN(x) { Serial.println(x); BT.println(x); }
+
+// ── PINES SENSORES ───────────────────────────────────────────
 const int sensorPins[6] = { A0, A1, A2, A3, A4, A5 };
 const int NUM_SENSORS   = 6;
 
-// ── PINES DE MOTORES ─────────────────────────────────────────
-// Se asume un driver tipo L298N o similar con:
-//   - PIN_ENA / PIN_ENB: PWM de velocidad (Enable A / B)
-//   - PIN_IN1 / PIN_IN2: dirección motor izquierdo
-//   - PIN_IN3 / PIN_IN4: dirección motor derecho
-const int PIN_ENA = 5;   // PWM motor izquierdo
-const int PIN_IN1 = 4;   // Motor izq. adelante
-const int PIN_IN2 = 3;   // Motor izq. atrás  (PWM en este pin también)
-const int PIN_ENB = 6;   // PWM motor derecho
-const int PIN_IN3 = 7;   // Motor der. adelante
-const int PIN_IN4 = 8;   // Motor der. atrás
+// ── PINES DE MOTORES (L298N) ─────────────────────────────────
+// M1 = motor derecha:  IN1 dirección, E1 velocidad PWM
+// M2 = motor izquierda: IN2 dirección, E2 velocidad PWM
+const int PIN_IN1 = 2;  // Dirección motor derecha
+const int PIN_E1  = 3;  // Velocidad motor derecha (PWM)
+const int PIN_IN2 = 4;  // Dirección motor izquierda
+const int PIN_E2  = 5;  // Velocidad motor izquierda (PWM)
 
 // ── PARÁMETROS DE VELOCIDAD ──────────────────────────────────
-const int VEL_BASE    = 160;  // 0-255: velocidad crucero
-const int VEL_GIRO    = 220;  // velocidad del lado externo al girar
-const int VEL_MINIMA  = 60;   // velocidad mínima del lado interno al girar
+const int VEL_BASE   = 160;  // 0-255: velocidad crucero
+const int VEL_MAXIMA = 255;  // velocidad máxima en giros
 
 // ── AUTOCALIBRACIÓN ──────────────────────────────────────────
 // Se almacena el mínimo (más blanco) y máximo (más negro) visto
@@ -39,6 +47,7 @@ const int LECTURAS_INIT = 200;
 
 // ── UMBRAL NORMALIZADO ───────────────────────────────────────
 // Tras normalizar 0-100, un valor mayor que este se considera NEGRO.
+// Funciona también para colores oscuros como rojo oscuro o azul marino.
 const int UMBRAL_NEGRO = 50;
 
 // ============================================================
@@ -46,48 +55,25 @@ const int UMBRAL_NEGRO = 50;
 // ============================================================
 
 /**
- * motorIzq(vel)
- * Controla el motor izquierdo.
- * vel > 0 → adelante, vel < 0 → atrás, vel = 0 → freno.
- * |vel| se mapea al rango PWM 0-255.
+ * motorDer(vel)
+ * Controla el motor derecho (M1).
+ * vel > 0 → adelante, vel = 0 → freno.
  */
-void motorIzq(int vel) {
-  vel = constrain(vel, -255, 255);
-  if (vel > 0) {
-    digitalWrite(PIN_IN1, HIGH);
-    digitalWrite(PIN_IN2, LOW);
-    analogWrite(PIN_ENA, vel);
-  } else if (vel < 0) {
-    digitalWrite(PIN_IN1, LOW);
-    digitalWrite(PIN_IN2, HIGH);
-    analogWrite(PIN_ENA, -vel);
-  } else {
-    // Freno: ambas entradas HIGH cortocircuitan el motor
-    digitalWrite(PIN_IN1, HIGH);
-    digitalWrite(PIN_IN2, HIGH);
-    analogWrite(PIN_ENA, 0);
-  }
+void motorDer(int vel) {
+  vel = constrain(vel, 0, 255);
+  digitalWrite(PIN_IN1, HIGH);
+  analogWrite(PIN_E1, vel);
 }
 
 /**
- * motorDer(vel)
- * Igual que motorIzq pero para el motor derecho.
+ * motorIzq(vel)
+ * Controla el motor izquierdo (M2).
+ * vel > 0 → adelante, vel = 0 → freno.
  */
-void motorDer(int vel) {
-  vel = constrain(vel, -255, 255);
-  if (vel > 0) {
-    digitalWrite(PIN_IN3, HIGH);
-    digitalWrite(PIN_IN4, LOW);
-    analogWrite(PIN_ENB, vel);
-  } else if (vel < 0) {
-    digitalWrite(PIN_IN3, LOW);
-    digitalWrite(PIN_IN4, HIGH);
-    analogWrite(PIN_ENB, -vel);
-  } else {
-    digitalWrite(PIN_IN3, HIGH);
-    digitalWrite(PIN_IN4, HIGH);
-    analogWrite(PIN_ENB, 0);
-  }
+void motorIzq(int vel) {
+  vel = constrain(vel, 0, 255);
+  digitalWrite(PIN_IN2, HIGH);
+  analogWrite(PIN_E2, vel);
 }
 
 /**
@@ -95,8 +81,8 @@ void motorDer(int vel) {
  * Para ambos motores inmediatamente.
  */
 void detener() {
-  motorIzq(0);
-  motorDer(0);
+  analogWrite(PIN_E1, 0);
+  analogWrite(PIN_E2, 0);
 }
 
 // ============================================================
@@ -120,9 +106,8 @@ void inicializarCalibracion() {
  * Recibe las lecturas crudas del ADC y actualiza los extremos
  * dinámicamente. Se llama en cada iteración del loop.
  *
- * De este modo, si el robot pasa por zonas más oscuras o más
- * claras que las vistas hasta ahora, los límites se amplían
- * automáticamente sin necesidad de reiniciar.
+ * De este modo, si el robot pasa por zonas con colores como rojo
+ * o azul, los límites se amplían automáticamente sin reiniciar.
  */
 void actualizarCalibracion(int valores[]) {
   for (int i = 0; i < NUM_SENSORS; i++) {
@@ -143,7 +128,6 @@ void actualizarCalibracion(int valores[]) {
  */
 int normalizar(int valor, int sensor) {
   if (calMax[sensor] == calMin[sensor]) return 50;
-  // map() de Arduino hace la interpolación lineal
   return map(valor, calMin[sensor], calMax[sensor], 0, 100);
 }
 
@@ -185,37 +169,37 @@ int calcularError(int norm[]) {
 /**
  * seguirLinea(error)
  * Aplica una corrección proporcional simple (P) a los motores.
- * error < 0 → línea a la izquierda → el robot gira izquierda
- * error > 0 → línea a la derecha   → el robot gira derecha
+ * error < 0 → línea a la izquierda → el robot gira izquierda (motor izq más lento)
+ * error > 0 → línea a la derecha   → el robot gira derecha (motor der más lento)
  *
  * La corrección se suma/resta a la velocidad base de cada motor.
  * Cuanto mayor |error|, más agresivo el giro.
  */
 void seguirLinea(int error) {
   // Ganancia proporcional: ajusta según la pista real
+  // Sube Kp si el robot reacciona poco, bájalo si va zigzagueando
   const float Kp = 20.0;
 
   int correccion = (int)(Kp * error);
 
-  int velIzq = VEL_BASE + correccion;
   int velDer = VEL_BASE - correccion;
+  int velIzq = VEL_BASE + correccion;
 
-  // Limitar al rango válido de PWM
-  velIzq = constrain(velIzq, -255, 255);
-  velDer = constrain(velDer, -255, 255);
+  // Limitar al rango válido de PWM (solo positivo, sin marcha atrás)
+  velDer = constrain(velDer, 0, VEL_MAXIMA);
+  velIzq = constrain(velIzq, 0, VEL_MAXIMA);
 
-  motorIzq(velIzq);
   motorDer(velDer);
+  motorIzq(velIzq);
 }
 
 /**
  * manejarLineaPerdida()
- * Estrategia básica cuando no se detecta línea:
- * el robot frena para no perderse más.
- * Puedes sustituir esto por una búsqueda giratoria si prefieres.
+ * Estrategia cuando no se detecta línea: frena para no perderse más.
  */
 void manejarLineaPerdida() {
   detener();
+  LOGLN("!! LINEA PERDIDA !!");
 }
 
 // ============================================================
@@ -223,14 +207,13 @@ void manejarLineaPerdida() {
 // ============================================================
 void setup() {
   Serial.begin(9600);
+  BT.begin(9600); // Asegúrate de que el HC-05 esté configurado a 9600
 
   // Configurar pines de motores como salida
-  pinMode(PIN_ENA, OUTPUT);
   pinMode(PIN_IN1, OUTPUT);
+  pinMode(PIN_E1,  OUTPUT);
   pinMode(PIN_IN2, OUTPUT);
-  pinMode(PIN_ENB, OUTPUT);
-  pinMode(PIN_IN3, OUTPUT);
-  pinMode(PIN_IN4, OUTPUT);
+  pinMode(PIN_E2,  OUTPUT);
 
   detener();
   inicializarCalibracion();
@@ -241,7 +224,7 @@ void setup() {
   // En este punto conviene mover el robot manualmente sobre
   // blanco y negro si es posible, pero si no, con quedarse
   // quieto ya siembra algo útil.
-  Serial.println("Calibrando...");
+  LOGLN("Calibrando...");
   for (int k = 0; k < LECTURAS_INIT; k++) {
     int raw[NUM_SENSORS];
     for (int i = 0; i < NUM_SENSORS; i++) {
@@ -250,7 +233,7 @@ void setup() {
     actualizarCalibracion(raw);
     delay(5);
   }
-  Serial.println("Calibración inicial lista. Iniciando...");
+  LOGLN("Calibracion inicial lista. Iniciando...");
 }
 
 // ============================================================
@@ -265,6 +248,7 @@ void loop() {
 
   // 2. Autocalibración continua: ampliar rango si encontramos
   //    valores más extremos que los vistos hasta ahora.
+  //    Esto hace que el robot se adapte a los colores del circuito en marcha.
   actualizarCalibracion(raw);
 
   // 3. Normalizar cada sensor a 0-100
@@ -283,18 +267,20 @@ void loop() {
     seguirLinea(error);
   }
 
-  // 6. Debug opcional por Serial (puedes comentarlo en producción)
-  Serial.print("Cal[min/max]: ");
+  // 6. Chivatos por Bluetooth y Serie
+  LOG("Norm: ");
   for (int i = 0; i < NUM_SENSORS; i++) {
-    Serial.print(calMin[i]); Serial.print("/");
-    Serial.print(calMax[i]); Serial.print("  ");
+    LOG(norm[i]); LOG(" ");
   }
-  Serial.print("| Norm: ");
-  for (int i = 0; i < NUM_SENSORS; i++) {
-    Serial.print(norm[i]); Serial.print(" ");
+  LOG("| Error: "); LOG(error);
+  if (error != 999) {
+    LOG(" | Vel D/I: ");
+    LOG(constrain(VEL_BASE - (int)(20.0 * error), 0, VEL_MAXIMA));
+    LOG("/");
+    LOGLN(constrain(VEL_BASE + (int)(20.0 * error), 0, VEL_MAXIMA));
+  } else {
+    LOGLN("");
   }
-  Serial.print("| Error: ");
-  Serial.println(error);
 
   delay(10);  // ~100 Hz de control
 }
