@@ -32,7 +32,7 @@ const int PIN_IN2 = 4;  // Dirección motor izquierda
 const int PIN_E2  = 5;  // Velocidad motor izquierda (PWM)
 
 // ── PARÁMETROS DE VELOCIDAD ──────────────────────────────────
-const int VEL_BASE   = 160;  // 0-255: velocidad crucero
+const int VEL_BASE   = 200;  // 0-255: velocidad crucero
 const int VEL_MAXIMA = 255;  // velocidad máxima en giros
 
 // ── AUTOCALIBRACIÓN ──────────────────────────────────────────
@@ -178,7 +178,7 @@ int calcularError(int norm[]) {
 void seguirLinea(int error) {
   // Ganancia proporcional: ajusta según la pista real
   // Sube Kp si el robot reacciona poco, bájalo si va zigzagueando
-  const float Kp = 20.0;
+  const float Kp = 30.0;
 
   int correccion = (int)(Kp * error);
 
