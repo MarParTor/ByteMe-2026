@@ -1,51 +1,42 @@
 // ============================================================
 //  CONTROL BLUETOOTH — ROBOT 3 RUEDAS
-//  2 ruedas motrices delanteras + 1 rueda loca trasera
+//  w=adelante | s=atrás | a=izq | d=der | z=parar
 //
-//  COMANDOS:
-//    w → adelante
-//    s → atrás
-//    a → girar izquierda (counter-rotation)
-//    d → girar derecha   (counter-rotation)
-//    z → parar / reanudar (toggle)
+//  SI NO RESPONDE POR BT: cambia BT_BAUD a 38400 (HC-05)
+//                         o déjalo en 9600 (HC-06)
 // ============================================================
 
 #include <SoftwareSerial.h>
-SoftwareSerial BT(10, 11); // RX, TX
+SoftwareSerial BT(10, 11);
 
-// ── COMANDOS ─────────────────────────────────────────────────
+#define BT_BAUD  9600
+
 #define FORWARD  'w'
 #define BACKWARD 's'
 #define LEFT     'a'
 #define RIGHT    'd'
-#define TOGGLE   'z'
+#define STOP     'z'
 
-// ── MOTORES (L298N) ───────────────────────────────────────────
 #define PIN_IN1 2
 #define PIN_E1  3
 #define PIN_IN2 4
 #define PIN_E2  5
 
-// ── VELOCIDADES ───────────────────────────────────────────────
-#define VEL_LINEAL 200
-#define VEL_GIRO   180
-
-// ── ESTADO ───────────────────────────────────────────────────
-char ultimoComando = TOGGLE;  // empieza parado
-bool parado        = true;
+#define VEL_LINEAL 255
+#define VEL_GIRO   255
 
 // ============================================================
 //  MOTORES
 // ============================================================
 
-void motorDer(int vel) {
+void motorIzq(int vel) {
   vel = constrain(vel, -255, 255);
   if      (vel > 0) { digitalWrite(PIN_IN1, HIGH); analogWrite(PIN_E1,  vel); }
   else if (vel < 0) { digitalWrite(PIN_IN1, LOW);  analogWrite(PIN_E1, -vel); }
   else              { digitalWrite(PIN_IN1, HIGH);  analogWrite(PIN_E1,    0); }
 }
 
-void motorIzq(int vel) {
+void motorDer(int vel) {
   vel = constrain(vel, -255, 255);
   if      (vel > 0) { digitalWrite(PIN_IN2, HIGH); analogWrite(PIN_E2,  vel); }
   else if (vel < 0) { digitalWrite(PIN_IN2, LOW);  analogWrite(PIN_E2, -vel); }
@@ -61,84 +52,29 @@ void detener() {
 //  MOVIMIENTOS
 // ============================================================
 
-void adelante() {
-  motorDer(VEL_LINEAL);
-  motorIzq(VEL_LINEAL);
-}
-
-void atras() {
-  motorDer(-VEL_LINEAL);
-  motorIzq(-VEL_LINEAL);
-}
-
-void girarIzquierda() {
-  motorDer( VEL_GIRO);
-  motorIzq(-VEL_GIRO);
-}
-
-void girarDerecha() {
-  motorDer(-VEL_GIRO);
-  motorIzq( VEL_GIRO);
-}
+void adelante()       { motorDer( VEL_LINEAL); motorIzq( VEL_LINEAL); }
+void atras()          { motorDer(-VEL_LINEAL); motorIzq(-VEL_LINEAL); }
+void girarIzquierda() { motorDer( VEL_GIRO);   motorIzq(-VEL_GIRO);   }
+void girarDerecha()   { motorDer(-VEL_GIRO);   motorIzq( VEL_GIRO);   }
 
 // ============================================================
 //  EJECUTAR COMANDO
 // ============================================================
 
-void executeCommand(char command) {
-  // Ignorar saltos de línea que algunos terminales envían
-  if (command == '\n' || command == '\r') return;
+void executeCommand(char cmd) {
+  if (cmd == '\n' || cmd == '\r') return;
 
-  switch (command) {
-    case FORWARD:
-      if (!parado) adelante();
-      ultimoComando = FORWARD;
-      Serial.println(">> Adelante");
-      BT.println(">> Adelante");
-      break;
-
-    case BACKWARD:
-      if (!parado) atras();
-      ultimoComando = BACKWARD;
-      Serial.println(">> Atras");
-      BT.println(">> Atras");
-      break;
-
-    case LEFT:
-      if (!parado) girarIzquierda();
-      ultimoComando = LEFT;
-      Serial.println(">> Izquierda");
-      BT.println(">> Izquierda");
-      break;
-
-    case RIGHT:
-      if (!parado) girarDerecha();
-      ultimoComando = RIGHT;
-      Serial.println(">> Derecha");
-      BT.println(">> Derecha");
-      break;
-
-    case TOGGLE:
-      parado = !parado;
-      if (parado) {
-        detener();
-        Serial.println(">> PARADO");
-        BT.println(">> PARADO");
-      } else {
-        // Reanudar ejecutando el último comando recibido
-        executeCommand(ultimoComando);
-        Serial.println(">> REANUDANDO");
-        BT.println(">> REANUDANDO");
-      }
-      break;
-
-    default:
-      Serial.print(">> Comando desconocido: ");
-      Serial.println(command);
-      BT.print(">> Comando desconocido: ");
-      BT.println(command);
-      break;
+  switch (cmd) {
+    case FORWARD:   adelante();       break;
+    case BACKWARD:  atras();          break;
+    case LEFT:      girarIzquierda(); break;
+    case RIGHT:     girarDerecha();   break;
+    case STOP:      detener();        break;
+    default: return;
   }
+
+  BT.print(">> "); BT.println(cmd);
+  Serial.print(">> "); Serial.println(cmd);
 }
 
 // ============================================================
@@ -147,17 +83,16 @@ void executeCommand(char command) {
 
 void setup() {
   Serial.begin(9600);
-  BT.begin(9600);
+  BT.begin(BT_BAUD);
 
   pinMode(PIN_IN1, OUTPUT); pinMode(PIN_E1, OUTPUT);
   pinMode(PIN_IN2, OUTPUT); pinMode(PIN_E2, OUTPUT);
 
   detener();
+  delay(1000);
 
-  Serial.println("Control BT listo.");
-  Serial.println("w=adelante | s=atras | a=izquierda | d=derecha | z=parar/reanudar");
-  BT.println("Control BT listo.");
-  BT.println("w=adelante | s=atras | a=izquierda | d=derecha | z=parar/reanudar");
+  BT.println("Control BT listo. w/s/a/d/z");
+  Serial.println("Control BT listo. w/s/a/d/z");
 }
 
 // ============================================================
@@ -165,13 +100,6 @@ void setup() {
 // ============================================================
 
 void loop() {
-  if (BT.available()) {
-    char command = BT.read();
-    executeCommand(command);
-  }
-
-  if (Serial.available()) {
-    char command = Serial.read();
-    executeCommand(command);
-  }
+  if (BT.available())     executeCommand(BT.read());
+  if (Serial.available()) executeCommand(Serial.read());
 }
