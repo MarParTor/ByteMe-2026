@@ -3,6 +3,11 @@
 //  2 ruedas motrices delanteras + 1 rueda loca trasera
 //  6 sensores IR delanteros (A0..A5)
 //
+//  CORRECCIÓN APLICADA:
+//  - seguirLinea() ya no permite velocidades negativas (marcha atrás)
+//    → los motores se limitan a [0, VEL_MAXIMA] durante el seguimiento
+//  - Kd bajado de 16 a 10 para reducir picos en esquinas afiladas (rombos)
+//
 //  GUÍA DE AJUSTE PASO A PASO:
 //
 //  ── PASO 1: Solo P ──────────────────────────────────────────
@@ -43,12 +48,12 @@ const int PIN_IN2 = 4;
 const int PIN_E2  = 5;
 
 // ── VELOCIDADES ───────────────────────────────────────────────
-const int VEL_BASE     = 170;
+const int VEL_BASE     = 240;
 const int VEL_MAXIMA   = 255;
-const int VEL_BUSQUEDA = 150;
+const int VEL_BUSQUEDA = 240;
 
 // ── UMBRAL DE NEGRO (0-100 normalizado) ──────────────────────
-const int UMBRAL_NEGRO = 50;
+const int UMBRAL_NEGRO = 65;
 
 // ── CALIBRACIÓN ───────────────────────────────────────────────
 int  calMin[NUM_SENSORS];
@@ -67,10 +72,12 @@ bool calibracionLista   = false;
 //
 //  PASO 3 — solo si hay deriva en recta, activa I:
 //    Kp = 20.0 | Kd = 6.0 | Ki = 0.5
+//
+//  NOTA: Kd bajado de 16 → 10 para evitar picos en esquinas de rombos
 // ============================================================
-const float Kp = 20.0;   // ← PASO 1: sube de 5 en 5
-const float Kd =  12.0;   // ← PASO 2: sube de 2 en 2  (empieza en 0)
-const float Ki =  1.0;   // ← PASO 3: sube de 0.5 en 0.5 (empieza en 0)
+const float Kp = 10.0;   // ← PASO 1: sube de 5 en 5
+const float Kd = 0.0;   // ← PASO 2: sube de 2 en 2 
+const float Ki =  0.0;   // ← PASO 3: sube de 0.5 en 0.5
 
 // ── VARIABLES INTERNAS DEL PID ───────────────────────────────
 int   errorAnterior  = 0;
@@ -176,26 +183,24 @@ int calcularError(int norm[]) {
 //
 //  La corrección se resta al motor derecho y se suma al izquierdo.
 //  Así, si la línea está a la derecha (error>0) el robot gira derecha.
+//
+//  *** CORRECCIÓN MARCHA ATRÁS ***
+//  Los motores se limitan a [0, VEL_MAXIMA] en lugar de [-VEL_MAXIMA, VEL_MAXIMA].
+//  En las esquinas afiladas de los rombos, la corrección puede superar 500,
+//  lo que antes invertía los motores. Ahora el motor más lento se detiene
+//  (pivote) en lugar de girar al revés.
 // ============================================================
 
 void seguirLinea(int error) {
 
   // ── TÉRMINO P ── (PASO 1) ────────────────────────────────
-  // Reacciona al error actual. Cuanto más lejos está la línea,
-  // más gira. Es la base del control.
   float termP = Kp * error;
 
   // ── TÉRMINO D ── (PASO 2, Kd > 0) ───────────────────────
-  // Reacciona a la velocidad de cambio del error.
-  // Si el error crece rápido → frena el giro antes de pasarse.
-  // Si el error decrece rápido → no frena innecesariamente.
   float termD = Kd * (error - errorAnterior);
   errorAnterior = error;
 
   // ── TÉRMINO I ── (PASO 3, Ki > 0) ───────────────────────
-  // Acumula el error a lo largo del tiempo.
-  // Corrige derivas lentas que P y D no llegan a eliminar.
-  // IMPORTANTE: solo acumula cuando hay línea (no en búsqueda).
   integrador += error;
   integrador  = constrain(integrador, -LIMITE_INTEGRADOR, LIMITE_INTEGRADOR);
   float termI = Ki * integrador;
@@ -203,8 +208,11 @@ void seguirLinea(int error) {
   // ── CORRECCIÓN TOTAL ─────────────────────────────────────
   int correccion = (int)(termP + termD + termI);
 
-  int velDer = constrain(VEL_BASE - correccion, -VEL_MAXIMA, VEL_MAXIMA);
-  int velIzq = constrain(VEL_BASE + correccion, -VEL_MAXIMA, VEL_MAXIMA);
+  // *** CAMBIO CLAVE: límite inferior 0 en lugar de -VEL_MAXIMA ***
+  // Esto impide que los motores vayan marcha atrás durante el seguimiento,
+  // evitando el comportamiento erróneo en los vértices de los rombos.
+  int velDer = constrain(VEL_BASE - correccion, 0, VEL_MAXIMA);
+  int velIzq = constrain(VEL_BASE + correccion, 0, VEL_MAXIMA);
 
   motorDer(velDer);
   motorIzq(velIzq);
@@ -240,6 +248,7 @@ void manejarLineaPerdida() {
           : (errorAlPerder > 0 ? 1 : -1);
 
   // Giro en sitio hacia el último lado donde se vio la línea
+  // (aquí sí se permiten velocidades negativas: es búsqueda activa)
   if (dir > 0) { motorDer(-VEL_BUSQUEDA); motorIzq( VEL_BUSQUEDA); }
   else         { motorDer( VEL_BUSQUEDA); motorIzq(-VEL_BUSQUEDA); }
 }
@@ -304,7 +313,7 @@ void loop() {
       if (buscandoLinea) {
         LOGLN(">> Linea recuperada.");
         buscandoLinea = false;
-        errorAnterior = error; // evita pico derivativo al recuperar
+        errorAnterior = error;
       }
       if      (norm[4] > UMBRAL_NEGRO || norm[5] > UMBRAL_NEGRO) ultimoLado =  1;
       else if (norm[0] > UMBRAL_NEGRO || norm[1] > UMBRAL_NEGRO) ultimoLado = -1;
@@ -314,7 +323,6 @@ void loop() {
   }
 
   // 6. Log — muestra los tres términos PID por separado
-  //    para que puedas ver la contribución de cada uno
   LOG("NORM: ");
   for (int i = 0; i < NUM_SENSORS; i++) { LOG(norm[i]); LOG(" "); }
   LOG("| ERR: ");   LOG(error);
@@ -323,9 +331,9 @@ void loop() {
   LOG(" | I: ");    LOG((int)(Ki * integrador));
   LOG(" | D/I: ");
   int corr = (int)(Kp*error + Kd*(error-errorAnterior) + Ki*integrador);
-  LOG(constrain(VEL_BASE - corr, -VEL_MAXIMA, VEL_MAXIMA));
+  LOG(constrain(VEL_BASE - corr, 0, VEL_MAXIMA));
   LOG("/");
-  LOGLN(constrain(VEL_BASE + corr, -VEL_MAXIMA, VEL_MAXIMA));
+  LOGLN(constrain(VEL_BASE + corr, 0, VEL_MAXIMA));
 
   delay(10);
 }
