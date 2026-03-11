@@ -1,3 +1,4 @@
+
 // ============================================================
 //  CONTROL BLUETOOTH — ROBOT 3 RUEDAS
 //  w=adelante | s=atrás | a=izq | d=der | z=parar
@@ -19,8 +20,8 @@ SoftwareSerial BT(10, 11);
 
 #define PIN_IN1 2
 #define PIN_E1  3
-#define PIN_IN2 4
-#define PIN_E2  5
+#define PIN_IN2 5
+#define PIN_E2  4
 
 #define VEL_LINEAL 255
 #define VEL_GIRO   255
