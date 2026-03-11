@@ -209,7 +209,7 @@ void loop() {
 
 
     // Motores: 0..255 (sin reversa en seguimiento normal)
-    int dynamicSpeed = BASE_SPEED - abs(error) * 0.01;
+    int dynamicSpeed = BASE_SPEED - abs(error) * 0.04;
     dynamicSpeed = constrain(dynamicSpeed, 150, BASE_SPEED);
 
     int sL = constrain((int)(dynamicSpeed + correction), -80, 255);
