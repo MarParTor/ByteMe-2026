@@ -207,6 +207,15 @@ void loop() {
 
     float correction = Kp * error + Ki * integral + Kd * deriv;
 
+    int curveBoost = 0;
+    int boostHelp = 120;
+    if (sens[0] > 800 && sens[5] < 400) {
+      curveBoost = -boostHelp;
+    }
+    else if (sens[5] > 800 && sens[0] < 400) {
+      curveBoost = boostHelp;
+    }
+    correction += curveBoost;
 
     // Motores: 0..255 (sin reversa en seguimiento normal)
     int dynamicSpeed = BASE_SPEED - abs(error) * 0.04;
@@ -220,12 +229,12 @@ void loop() {
     motorLeft(sL);
     motorRight(sR);
 
+
+  } else {
   // ==========================================================
   //  LÍNEA PERDIDA → GIRAR EN ARCO HASTA ENCONTRARLA
   //  Sin timeout. Sin cambio de dirección. Gira para siempre.
   // ==========================================================
-  } else {
-
     lineLost = true;
 
     // lastSide indica dónde se fue la línea → girar hacia ahí
