@@ -40,9 +40,7 @@ bool   lineLost  = false;
 const int SEARCH_OUTER =  220;   
 const int SEARCH_INNER = -220;   
 
-// ============================================================
 //  MOTORES
-// ============================================================
 void motorRight(int speed) {
   speed = constrain(speed, -255, 255);
   digitalWrite(M1_IN, speed >= 0 ? HIGH : LOW);
@@ -55,9 +53,7 @@ void motorLeft(int speed) {
   analogWrite(M2_E, abs(speed));
 }
 
-// ============================================================
 //  SENSORES
-// ============================================================
 void readRawRC(uint16_t *raw) {
   for (uint8_t i = 0; i < NUM_SENSORS; i++) {
     pinMode(SENSOR_PINS[i], OUTPUT);
@@ -137,9 +133,7 @@ void calibrate() {
   delay(500);
 }
 
-// ============================================================
 //  ESPERAR SEÑAL POR BLUETOOTH
-// ============================================================
 void waitForStart() {
   Serial.println("Esperando 'e' para empezar...");
   BT.println("Esperando 'e' para empezar...");

@@ -1,6 +1,7 @@
-// ============================================================
-// SUMO ROBOT + DETECCION LINEA NEGRA + CHIVATOS IR
-// ============================================================
+// bluetooth
+#include <SoftwareSerial.h>
+SoftwareSerial BT(10, 11);
+#define BT_BAUD 9600
 
 // ---- Ultrasonido ----
 const uint8_t TRIG_PIN = 6;
@@ -102,9 +103,7 @@ bool lineaNegra(uint16_t *rawValues) {
   return false;
 }
 
-// ============================================================
 // COMPORTAMIENTOS
-// ============================================================
 
 void atacar(){
   motorLeft(255);
@@ -147,14 +146,26 @@ void retroceder(){
 
   delay(1100);
 }
-
-// ============================================================
-// SETUP
-// ============================================================
+//  ESPERAR SEÑAL POR BLUETOOTH
+void waitForStart() {
+  Serial.println("Esperando 'e' para empezar...");
+  BT.println("Esperando 'e' para empezar...");
+  while (true) {
+    if (BT.available()) {
+      char c = BT.read();
+      if (c == 'e') {
+        Serial.println("¡Comenzando!");
+        BT.println("¡Comenzando!");
+        return;
+      }
+    }
+  }
+}
 
 void setup() {
 
   Serial.begin(9600);
+  BT.begin(BT_BAUD);
 
   pinMode(TRIG_PIN, OUTPUT);
   pinMode(ECHO_PIN, INPUT);
@@ -167,19 +178,15 @@ void setup() {
   pinMode(LEDON_PIN, OUTPUT);
   digitalWrite(LEDON_PIN, HIGH);
 
-  motorLeft(0);
-  motorRight(0);
+
+  waitForStart(); // espera la señal 'e'
 }
 
-// ============================================================
 // LOOP
-// ============================================================
-
 void loop() {
 
   uint16_t raw[NUM_SENSORS];
 
-  // ------------ CHIVATOS IR ------------
   readRawRC(raw);
   Serial.print("IR raw: ");
   for (uint8_t i = 0; i < NUM_SENSORS; i++) {
@@ -188,7 +195,7 @@ void loop() {
   }
   Serial.println();
 
-  // ------------ LINEA NEGRA ------------
+  // LINEA NEGRA
   if (lineaNegra(raw)) {
     Serial.println("LINEA NEGRA DETECTADA");
     retroceder();
