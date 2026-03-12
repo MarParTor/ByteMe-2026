@@ -22,9 +22,9 @@ const uint8_t M2_E  = 4;   // PWM der
 // ---- Velocidades ----
 const int BASE_SPEED = 220;
 
-// ---- PID ----
+//PID
 float Kp = 4.0;
-float Ki = 0.1; //0.5
+float Ki = 0.1;
 float Kd = 4;
 float integral  = 0.0;
 float lastError = 0.0;
@@ -60,9 +60,8 @@ void motorLeft(int speed) {
   analogWrite(M2_E, abs(speed));
 }
 
-// ============================================================
+
 //  LECTURA RAW QTR-8RC
-// ============================================================
 void readRawRC(uint16_t *raw) {
   for (uint8_t i = 0; i < NUM_SENSORS; i++) {
     pinMode(SENSOR_PINS[i], OUTPUT);
@@ -91,9 +90,7 @@ void readRawRC(uint16_t *raw) {
   }
 }
 
-// ============================================================
 //  LECTURA NORMALIZADA  0 (blanco) … 1000 (negro)
-// ============================================================
 void readNorm(uint16_t *val) {
   uint16_t raw[NUM_SENSORS];
   readRawRC(raw);
@@ -105,9 +102,7 @@ void readNorm(uint16_t *val) {
   }
 }
 
-// ============================================================
 //  POSICIÓN DE LÍNEA  −2500 … +2500
-// ============================================================
 int16_t getPosition(uint16_t *val, bool &found) {
   readNorm(val);
 
@@ -125,9 +120,7 @@ int16_t getPosition(uint16_t *val, bool &found) {
   return (int16_t)((int32_t)(wSum / sum) - 2500L);
 }
 
-// ============================================================
 //  CALIBRACIÓN  (~3 s)
-// ============================================================
 void calibrate() {
   for (uint8_t i = 0; i < NUM_SENSORS; i++) {
     sensorMin[i] = RC_TIMEOUT;
@@ -172,31 +165,23 @@ void setup() {
   calibrate();
 }
 
-// ============================================================
-//  LOOP
-// ============================================================
 void loop() {
   uint16_t sens[NUM_SENSORS];
   bool found;
 
   int16_t pos = getPosition(sens, found);
 
-  // ==========================================================
-  //  LÍNEA ENCONTRADA → PID
-  // ==========================================================
   if (found) {
 
-    // Resetear PID si venimos de búsqueda
+    // Resetear PID 
     if (lineLost) {
       integral  = 0.0;
       lastError = 0.0;
       lineLost  = false;
     }
 
-    // Actualizar lado SIEMPRE que hay línea (sin zona muerta)
     if (pos < 0) lastSide = -1;
     if (pos > 0) lastSide =  1;
-    // Si pos == 0 exacto, mantiene el último lado
 
     // PID
     float error = (float)pos;
@@ -217,33 +202,23 @@ void loop() {
     }
     correction += curveBoost;
 
-    // Motores: 0..255 (sin reversa en seguimiento normal)
     int dynamicSpeed = BASE_SPEED - abs(error) * 0.04;
     dynamicSpeed = constrain(dynamicSpeed, 150, BASE_SPEED);
 
     int sL = constrain((int)(dynamicSpeed + correction), -80, 255);
     int sR = constrain((int)(dynamicSpeed - correction), -80, 255);
-    //int sL = constrain((int)(dynamicSpeed + correction), 0, 255);
-    //int sR = constrain((int)(dynamicSpeed - correction), 0, 255);
 
     motorLeft(sL);
     motorRight(sR);
 
 
   } else {
-  // ==========================================================
-  //  LÍNEA PERDIDA → GIRAR EN ARCO HASTA ENCONTRARLA
-  //  Sin timeout. Sin cambio de dirección. Gira para siempre.
-  // ==========================================================
     lineLost = true;
 
-    // lastSide indica dónde se fue la línea → girar hacia ahí
     if (lastSide > 0) {
-      // Línea a la derecha → motor izq avanza, motor der reversa
       motorLeft(SEARCH_OUTER);
       motorRight(SEARCH_INNER);
     } else {
-      // Línea a la izquierda → motor der avanza, motor izq reversa
       motorLeft(SEARCH_INNER);
       motorRight(SEARCH_OUTER);
     }

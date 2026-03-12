@@ -1,10 +1,28 @@
+// ============================================================
+// SUMO ROBOT + DETECCION LINEA NEGRA + CHIVATOS IR
+// ============================================================
+
+// ---- Ultrasonido ----
 const uint8_t TRIG_PIN = 6;
 const uint8_t ECHO_PIN = 7;
 
+// ---- Motores ----
 const uint8_t M1_IN = 2;
 const uint8_t M1_E  = 3;
 const uint8_t M2_IN = 5;
 const uint8_t M2_E  = 4;
+
+// ---- Sensores QTR ----
+const uint8_t NUM_SENSORS = 6;
+const uint8_t SENSOR_PINS[NUM_SENSORS] = {A5, A4, A3, A2, A1, A0};
+const uint8_t LEDON_PIN = 8;
+
+const uint16_t RC_TIMEOUT = 2500;
+const uint16_t BLACK_THRESHOLD = 1600;
+
+// ============================================================
+// MOTORES
+// ============================================================
 
 void motorRight(int speed) {
   speed = constrain(speed, 255, -255);
@@ -15,6 +33,7 @@ void motorRight(int speed) {
   digitalWrite(M1_IN, speed >= 0 ? HIGH : LOW);
   analogWrite(M1_E, abs(speed));
 }
+
 void motorLeft(int speed) {
   speed = constrain(speed, 255, -255);
   if (speed == 0) {
@@ -24,16 +43,82 @@ void motorLeft(int speed) {
   digitalWrite(M2_IN, speed >= 0 ? HIGH : LOW);
   analogWrite(M2_E, abs(speed));
 }
+
+// ============================================================
+// LECTURA RAW QTR
+// ============================================================
+
+void readRawRC(uint16_t *raw) {
+
+  for (uint8_t i = 0; i < NUM_SENSORS; i++) {
+    pinMode(SENSOR_PINS[i], OUTPUT);
+    digitalWrite(SENSOR_PINS[i], HIGH);
+  }
+
+  delayMicroseconds(10);
+
+  for (uint8_t i = 0; i < NUM_SENSORS; i++) {
+    pinMode(SENSOR_PINS[i], INPUT);
+    raw[i] = RC_TIMEOUT;
+  }
+
+  bool done[NUM_SENSORS] = {};
+  uint8_t remaining = NUM_SENSORS;
+  uint32_t t0 = micros();
+
+  while (remaining > 0) {
+
+    uint32_t dt = micros() - t0;
+    if (dt >= RC_TIMEOUT) break;
+
+    for (uint8_t i = 0; i < NUM_SENSORS; i++) {
+
+      if (!done[i] && digitalRead(SENSOR_PINS[i]) == LOW) {
+
+        raw[i] = dt;
+        done[i] = true;
+        remaining--;
+      }
+    }
+  }
+}
+
+// ============================================================
+// DETECCION LINEA NEGRA
+// ============================================================
+
+bool lineaNegra(uint16_t *rawValues) {
+
+  // rawValues debe tener espacio para NUM_SENSORS
+  readRawRC(rawValues);
+
+  for (uint8_t i = 0; i < NUM_SENSORS; i++) {
+
+    if (rawValues[i] > BLACK_THRESHOLD) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+// ============================================================
+// COMPORTAMIENTOS
+// ============================================================
+
 void atacar(){
   motorLeft(255);
   motorRight(255);
 }
+
 void buscar(){
+
   static uint32_t lastTurn = 0;
   static int8_t dir = 1;
-  const uint32_t ZIGZAG_INTERVAL = 1000; // ms entre giros, ajusta a tu gusto
+  const uint32_t ZIGZAG_INTERVAL = 1000;
 
   uint32_t now = millis();
+
   if (now - lastTurn >= ZIGZAG_INTERVAL) {
     dir = -dir;
     lastTurn = now;
@@ -41,7 +126,9 @@ void buscar(){
 
   motorLeft(255);
   motorRight(255);
+
   delay(80);
+
   if (dir > 0) {
     motorLeft(255);
     motorRight(0);
@@ -49,24 +136,73 @@ void buscar(){
     motorLeft(0);
     motorRight(255);
   }
+
   delay(100);
 }
 
+void retroceder(){
+
+  motorLeft(-255);
+  motorRight(-255);
+
+  delay(1100);
+}
+
+// ============================================================
+// SETUP
+// ============================================================
+
 void setup() {
+
   Serial.begin(9600);
+
   pinMode(TRIG_PIN, OUTPUT);
   pinMode(ECHO_PIN, INPUT);
-  pinMode(M1_IN, OUTPUT); pinMode(M1_E, OUTPUT);
-  pinMode(M2_IN, OUTPUT); pinMode(M2_E, OUTPUT);
+
+  pinMode(M1_IN, OUTPUT);
+  pinMode(M1_E, OUTPUT);
+  pinMode(M2_IN, OUTPUT);
+  pinMode(M2_E, OUTPUT);
+
+  pinMode(LEDON_PIN, OUTPUT);
+  digitalWrite(LEDON_PIN, HIGH);
+
   motorLeft(0);
   motorRight(0);
 }
 
+// ============================================================
+// LOOP
+// ============================================================
+
 void loop() {
+
+  uint16_t raw[NUM_SENSORS];
+
+  // ------------ CHIVATOS IR ------------
+  readRawRC(raw);
+  Serial.print("IR raw: ");
+  for (uint8_t i = 0; i < NUM_SENSORS; i++) {
+    Serial.print(raw[i]);
+    Serial.print(i < NUM_SENSORS-1 ? " | " : "");
+  }
+  Serial.println();
+
+  // ------------ LINEA NEGRA ------------
+  if (lineaNegra(raw)) {
+    Serial.println("LINEA NEGRA DETECTADA");
+    retroceder();
+    return;
+  }
+
+  // -------- ULTRASONIDO --------
+
   digitalWrite(TRIG_PIN, LOW);
   delayMicroseconds(2);
+
   digitalWrite(TRIG_PIN, HIGH);
   delayMicroseconds(10);
+
   digitalWrite(TRIG_PIN, LOW);
 
   long duration = pulseIn(ECHO_PIN, HIGH, 25000);
@@ -77,7 +213,6 @@ void loop() {
   Serial.println(" cm");
 
   if (dist > 0 && dist < 40.0) {
-    Serial.println(">> ENEMIGO DETECTADO — atacando");
     atacar();
   } else {
     buscar();
