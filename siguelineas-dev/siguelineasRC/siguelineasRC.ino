@@ -1,49 +1,44 @@
-// ============================================================
 //  Robot Siguelíneas — PID + Recuperación  |  L298N  |  v3
-//
-//  Hardware:
-//    · 6 sensores IR QTR-8RC → pines A0–A5
-//    · L298N Motor izq: IN1=2, E1=3(PWM)
-//    · L298N Motor der: IN2=4, E2=5(PWM)
-//    · LEDON array QTR → pin 8
-// ============================================================
+//  Ahora espera a recibir "e" antes de empezar
 
-// ---- Sensores ----
+#include <SoftwareSerial.h>
+SoftwareSerial BT(10, 11);
+#define BT_BAUD 9600
+
+// --- Sensores ---
 const uint8_t NUM_SENSORS = 6;
 const uint8_t SENSOR_PINS[NUM_SENSORS] = {A5, A4, A3, A2, A1, A0};
 const uint8_t LEDON_PIN = 8;
 
-// ---- Motores L298N ----
+// --- Motores ---
 const uint8_t M1_IN = 2;   // dirección izq
 const uint8_t M1_E  = 3;   // PWM izq
 const uint8_t M2_IN = 5;   // dirección der
 const uint8_t M2_E  = 4;   // PWM der
 
-// ---- Velocidades ----
+// --- Velocidades ---
 const int BASE_SPEED = 220;
 
-//PID
+// --- PID ---
 float Kp = 4.0;
 float Ki = 0.1;
 float Kd = 4;
 float integral  = 0.0;
 float lastError = 0.0;
 
-// ---- Sensores calibración ----
+// --- Sensores calibración ---
 uint16_t sensorMin[NUM_SENSORS];
 uint16_t sensorMax[NUM_SENSORS];
 const uint16_t RC_TIMEOUT = 2500;
 const uint16_t THRESHOLD  = 500;
 
-// ---- Recuperación de línea ----
-//  lastSide guarda SIEMPRE hacia qué lado se vio la línea por última vez
-//  Se actualiza en CADA lectura donde se encuentra línea (sin zona muerta)
+// --- Recuperación de línea ---
 int8_t lastSide  = 1;       // 1 = derecha, -1 = izquierda
 bool   lineLost  = false;
 
 // Velocidades del arco de búsqueda
-const int SEARCH_OUTER =  220;   // motor exterior: máximo
-const int SEARCH_INNER = -220;   // motor interior: máximo reversa
+const int SEARCH_OUTER =  220;   
+const int SEARCH_INNER = -220;   
 
 // ============================================================
 //  MOTORES
@@ -60,8 +55,9 @@ void motorLeft(int speed) {
   analogWrite(M2_E, abs(speed));
 }
 
-
-//  LECTURA RAW QTR-8RC
+// ============================================================
+//  SENSORES
+// ============================================================
 void readRawRC(uint16_t *raw) {
   for (uint8_t i = 0; i < NUM_SENSORS; i++) {
     pinMode(SENSOR_PINS[i], OUTPUT);
@@ -73,8 +69,8 @@ void readRawRC(uint16_t *raw) {
     raw[i] = RC_TIMEOUT;
   }
 
-  bool     done[NUM_SENSORS] = {};
-  uint8_t  remaining = NUM_SENSORS;
+  bool done[NUM_SENSORS] = {};
+  uint8_t remaining = NUM_SENSORS;
   uint32_t t0 = micros();
 
   while (remaining > 0) {
@@ -90,22 +86,18 @@ void readRawRC(uint16_t *raw) {
   }
 }
 
-//  LECTURA NORMALIZADA  0 (blanco) … 1000 (negro)
 void readNorm(uint16_t *val) {
   uint16_t raw[NUM_SENSORS];
   readRawRC(raw);
   for (uint8_t i = 0; i < NUM_SENSORS; i++) {
     uint16_t r = constrain(raw[i], sensorMin[i], sensorMax[i]);
     uint32_t range = sensorMax[i] - sensorMin[i];
-    val[i] = (range == 0) ? 0
-           : (uint16_t)(((uint32_t)(r - sensorMin[i]) * 1000UL) / range);
+    val[i] = (range == 0) ? 0 : (uint16_t)(((uint32_t)(r - sensorMin[i]) * 1000UL) / range);
   }
 }
 
-//  POSICIÓN DE LÍNEA  −2500 … +2500
 int16_t getPosition(uint16_t *val, bool &found) {
   readNorm(val);
-
   uint32_t wSum = 0, sum = 0;
   found = false;
 
@@ -120,7 +112,7 @@ int16_t getPosition(uint16_t *val, bool &found) {
   return (int16_t)((int32_t)(wSum / sum) - 2500L);
 }
 
-//  CALIBRACIÓN  (~3 s)
+// Calibración
 void calibrate() {
   for (uint8_t i = 0; i < NUM_SENSORS; i++) {
     sensorMin[i] = RC_TIMEOUT;
@@ -141,65 +133,71 @@ void calibrate() {
       if (raw[i] > sensorMax[i]) sensorMax[i] = raw[i];
     }
   }
-  motorLeft(0);
-  motorRight(0);
+  motorLeft(0); motorRight(0);
   delay(500);
+}
+
+// ============================================================
+//  ESPERAR SEÑAL POR BLUETOOTH
+// ============================================================
+void waitForStart() {
+  Serial.println("Esperando 'e' para empezar...");
+  BT.println("Esperando 'e' para empezar...");
+  while (true) {
+    if (BT.available()) {
+      char c = BT.read();
+      if (c == 'e') {
+        Serial.println("¡Comenzando!");
+        BT.println("¡Comenzando!");
+        return;
+      }
+    }
+  }
 }
 
 // ============================================================
 //  SETUP
 // ============================================================
 void setup() {
-  delay(4000);
-
+  delay(1000);
   pinMode(LEDON_PIN, OUTPUT);
   digitalWrite(LEDON_PIN, HIGH);
 
   pinMode(M1_IN, OUTPUT); pinMode(M1_E, OUTPUT);
   pinMode(M2_IN, OUTPUT); pinMode(M2_E, OUTPUT);
 
-  motorLeft(0);
-  motorRight(0);
-  delay(500);
+  motorLeft(0); motorRight(0);
 
-  calibrate();
+  Serial.begin(9600);
+  BT.begin(BT_BAUD);
+
+  calibrate();    // calibración de sensores
+  waitForStart(); // espera la señal 'e'
 }
 
+// ============================================================
+//  LOOP PRINCIPAL
+// ============================================================
 void loop() {
   uint16_t sens[NUM_SENSORS];
   bool found;
-
   int16_t pos = getPosition(sens, found);
 
   if (found) {
-
-    // Resetear PID 
-    if (lineLost) {
-      integral  = 0.0;
-      lastError = 0.0;
-      lineLost  = false;
-    }
-
+    if (lineLost) { integral = 0.0; lastError = 0.0; lineLost = false; }
     if (pos < 0) lastSide = -1;
-    if (pos > 0) lastSide =  1;
+    if (pos > 0) lastSide = 1;
 
-    // PID
     float error = (float)pos;
-    integral   += error;
-    integral    = constrain(integral, -5000.0f, 5000.0f);
+    integral += error;
+    integral = constrain(integral, -5000.0f, 5000.0f);
     float deriv = error - lastError;
-    lastError   = error;
+    lastError = error;
 
     float correction = Kp * error + Ki * integral + Kd * deriv;
-
     int curveBoost = 0;
-    int boostHelp = 120;
-    if (sens[0] > 800 && sens[5] < 400) {
-      curveBoost = -boostHelp;
-    }
-    else if (sens[5] > 800 && sens[0] < 400) {
-      curveBoost = boostHelp;
-    }
+    if (sens[0] > 800 && sens[5] < 400) curveBoost = -120;
+    else if (sens[5] > 800 && sens[0] < 400) curveBoost = 120;
     correction += curveBoost;
 
     int dynamicSpeed = BASE_SPEED - abs(error) * 0.04;
@@ -208,19 +206,11 @@ void loop() {
     int sL = constrain((int)(dynamicSpeed + correction), -80, 255);
     int sR = constrain((int)(dynamicSpeed - correction), -80, 255);
 
-    motorLeft(sL);
-    motorRight(sR);
-
+    motorLeft(sL); motorRight(sR);
 
   } else {
     lineLost = true;
-
-    if (lastSide > 0) {
-      motorLeft(SEARCH_OUTER);
-      motorRight(SEARCH_INNER);
-    } else {
-      motorLeft(SEARCH_INNER);
-      motorRight(SEARCH_OUTER);
-    }
+    if (lastSide > 0) { motorLeft(SEARCH_OUTER); motorRight(SEARCH_INNER); }
+    else               { motorLeft(SEARCH_INNER); motorRight(SEARCH_OUTER); }
   }
 }

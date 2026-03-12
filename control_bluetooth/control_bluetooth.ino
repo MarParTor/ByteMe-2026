@@ -12,10 +12,20 @@ SoftwareSerial BT(10, 11);
 
 #define BT_BAUD  9600
 
+
+/* Feliz
 #define FORWARD  'w'
 #define BACKWARD 's'
 #define LEFT     'a'
 #define RIGHT    'd'
+#define STOP     'z'
+*/
+
+/* Enfadado */
+#define FORWARD  's'
+#define BACKWARD 'w'
+#define LEFT     'd'
+#define RIGHT    'a'
 #define STOP     'z'
 
 #define PIN_IN1 2
