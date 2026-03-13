@@ -13,21 +13,21 @@ SoftwareSerial BT(10, 11);
 #define BT_BAUD  9600
 
 
-/* Feliz
+/* Feliz */
 #define FORWARD  'w'
 #define BACKWARD 's'
 #define LEFT     'a'
 #define RIGHT    'd'
 #define STOP     'z'
-*/
 
-/* Enfadado */
+
+/* Enfadado 
 #define FORWARD  's'
 #define BACKWARD 'w'
-#define LEFT     'd'
-#define RIGHT    'a'
+#define LEFT     'a'
+#define RIGHT    'd'
 #define STOP     'z'
-
+*/
 #define PIN_IN1 2
 #define PIN_E1  3
 #define PIN_IN2 5
@@ -65,8 +65,8 @@ void detener() {
 
 void adelante()       { motorDer( VEL_LINEAL); motorIzq( VEL_LINEAL); }
 void atras()          { motorDer(-VEL_LINEAL); motorIzq(-VEL_LINEAL); }
-void girarIzquierda() { motorDer( VEL_GIRO);   motorIzq(-VEL_GIRO);   }
-void girarDerecha()   { motorDer(-VEL_GIRO);   motorIzq( VEL_GIRO);   }
+void girarIzquierda() { motorDer( -VEL_GIRO);   motorIzq(VEL_GIRO);   }
+void girarDerecha()   { motorDer(VEL_GIRO);   motorIzq( -VEL_GIRO);   }
 
 // ============================================================
 //  EJECUTAR COMANDO

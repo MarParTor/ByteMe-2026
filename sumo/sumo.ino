@@ -45,10 +45,8 @@ void motorLeft(int speed) {
   analogWrite(M2_E, abs(speed));
 }
 
-// ============================================================
 // LECTURA RAW QTR
-// ============================================================
-
+  
 void readRawRC(uint16_t *raw) {
 
   for (uint8_t i = 0; i < NUM_SENSORS; i++) {
@@ -110,33 +108,12 @@ void atacar(){
   motorRight(255);
 }
 
-void buscar(){
-
-  static uint32_t lastTurn = 0;
-  static int8_t dir = 1;
-  const uint32_t ZIGZAG_INTERVAL = 1000;
-
-  uint32_t now = millis();
-
-  if (now - lastTurn >= ZIGZAG_INTERVAL) {
-    dir = -dir;
-    lastTurn = now;
-  }
+void buscar(){ // Modo Carla
 
   motorLeft(255);
-  motorRight(255);
+  motorRight(0);
 
-  delay(80);
-
-  if (dir > 0) {
-    motorLeft(255);
-    motorRight(0);
-  } else {
-    motorLeft(0);
-    motorRight(255);
-  }
-
-  delay(100);
+  //delay(10);
 }
 
 void retroceder(){
@@ -225,5 +202,5 @@ void loop() {
     buscar();
   }
 
-  delay(200);
+  //delay(10);
 }
